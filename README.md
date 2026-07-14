@@ -1,7 +1,7 @@
 # CNN--BiGRU RFI excision for FRB analysis
 
 This repository contains a CNN--BiGRU model for predicting one RFI score for
-each of 4096 frequency channels. The default threshold is `0.381270`; channels
+each of 4096 frequency channels. The default threshold is `0.38127`; channels
 with scores greater than or equal to this value are masked.
 
 ## Files
