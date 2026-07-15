@@ -1,8 +1,8 @@
 # CNN--BiGRU RFI excision for FRB analysis
 
-This repository contains a CNN--BiGRU model for predicting one RFI score for
-each of 4096 frequency channels. The default threshold is `0.38127`; channels
-with scores greater than or equal to this value are masked.
+This repository contains a CNN--BiGRU model for predicting RFI score for
+each of 4096 frequency channels. Channels with scores greater than 
+threshold are masked.
 
 ## Files
 
@@ -86,15 +86,6 @@ The default schedule uses AdamW for 35 epochs, an initial learning rate of
 `1e-3`, weight decay `1e-2`, and learning-rate reductions by a factor of 0.3
 after epochs 20 and 30.
 
-`train.py` reads samples from disk as needed instead of loading the complete
-dataset into memory. It uses seed `1`, an independent random-order generator
-and fixed CuDNN settings. The reported train loss is recomputed over the
-training split after every epoch. Exact floating-point values can still depend
-on the PyTorch, CUDA and cuDNN versions and the hardware.
-
-The script saves every epoch as `checkpoints/cnn_bigru_epoch_XX.pth` and
-records the training loss in `training_log.csv`.
-
 ## Evaluation and ONNX export
 
 Edit `TEST_DIR`, `MODEL_FILE`, `THRESHOLD` and the other settings at the top of
@@ -105,8 +96,7 @@ python test.py
 ```
 
 The program prints ROC AUC, mean TP/FN/TN/FP channel counts per file,
-bad-channel recall, good-channel retention and mean forward time. It does not
-make plots or write modified archives.
+bad-channel recall, good-channel retention and mean forward time.
 
 To export the model, set:
 
@@ -159,9 +149,6 @@ For a PSRCHIVE installation inside the active Conda environment, use:
 ```bash
 export PSR=$CONDA_PREFIX
 ```
-
-The two rpath options allow the executable to locate the PSRCHIVE and ONNX
-Runtime shared libraries without changing `LD_LIBRARY_PATH`.
 
 ## Applying a mask
 
