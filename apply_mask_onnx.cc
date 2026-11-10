@@ -8,9 +8,12 @@
 //   output : float32 [1, 4096]         (bad-channel score in [0,1])
 //
 // The preprocessing matches the Python training/inference code:
-//   I = first polarization profile data, shaped [chan, subint*bin]
+//   Load an independent archive for AI preprocessing
+//   Convert to Stokes if necessary, then remove_baseline()
+//   I = Stokes-I profile data, shaped [chan, subint*bin]
 //   robust normalization by median and 1.4826*MAD
 //   NaN/Inf -> 0
+//   Preserve original archive profiles; REPLACE (not combine) output channel weights
 //
 // Usage:
 //   apply_mask_onnx input.ar model.onnx output.ar [threshold] [threads]
@@ -40,7 +43,7 @@ constexpr int EXPECT_NCHAN = 4096;
 constexpr int EXPECT_NTIME = 4096;
 constexpr int VALID_FIRST = 164;
 constexpr int VALID_LAST  = 3932;  // exclusive
-constexpr float DEFAULT_THRESHOLD = 0.38127f;
+constexpr float DEFAULT_THRESHOLD = 0.381270f;
 
 using Clock = std::chrono::steady_clock;
 
@@ -56,7 +59,7 @@ void usage(const char* prog) {
         << "Arguments:\n"
         << "  input.ar    Input PSRCHIVE archive\n"
         << "  model.onnx  ONNX model exported with output=sigmoid score, shape [1,4096]\n"
-        << "  output.ar   Output archive with AI channel weights applied\n"
+        << "  output.ar   Output archive with old mask replaced by AI mask\n"
         << "  threshold   Optional; mask channel if score >= threshold"
         << " (default 0.381270)\n"
         << "  threads     Optional ONNXRuntime intra-op thread count, default 1\n\n"
@@ -178,9 +181,9 @@ std::vector<float> extract_normalized_I(Pulsar::Archive* ar) {
 
     std::vector<float> I(static_cast<size_t>(nchan) * ntime, 0.0f);
 
-    // Match Python: data[:, 0, :, :] -> transpose to [chan, subint, bin]
-    // -> reshape [chan, nsub*nbin].  We do not change archive state, and use
-    // polarization index 0 exactly as the training conversion did.
+    // Match Python after Stokes conversion and baseline subtraction:
+    // data[:, 0, :, :] -> transpose to [chan, subint, bin]
+    // -> reshape [chan, nsub*nbin]. Polarization index 0 is Stokes I.
     for (int isub = 0; isub < nsub; ++isub) {
         Pulsar::Integration* integ = ar->get_Integration(isub);
         for (int ichan = 0; ichan < nchan; ++ichan) {
@@ -332,11 +335,12 @@ void apply_mask_and_write(
                 keep = (score[ichan] < threshold);
             }
 
-            // Preserve any pre-existing zero weights.  For normal dspsr output,
-            // old weights are usually 1.  Edge channels are always zeroed.
-            const float old_weight = integ->get_weight(ichan);
-            const float new_weight = (keep && old_weight > 0.0f) ? old_weight : 0.0f;
-            integ->set_weight(ichan, new_weight);
+            // Match Python test.py: bad = (sigmoid_score >= threshold).
+            // Replace ALL existing channel weights rather than intersecting
+            // the AI decision with a pre-existing pazi/manual mask.
+            // Outside VALID_FIRST:VALID_LAST, force the channel weight to 0.
+            // Inside the valid range, 1 = AI keep, 0 = AI reject.
+            integ->set_weight(ichan, keep ? 1.0f : 0.0f);
         }
     }
 
@@ -373,11 +377,22 @@ int main(int argc, char** argv) {
         const auto t_total = Clock::now();
 
         const auto t_read = Clock::now();
+        // Keep the original data untouched: output must modify weights only.
         Reference::To<Pulsar::Archive> ar = Pulsar::Archive::load(input_ar);
+        // Independently load for preprocessing, following convert_data.py.
+        // Do NOT reset old weights here: Python remove_baseline() receives
+        // the loaded archive with its original weights unchanged.
+        Reference::To<Pulsar::Archive> ar_ai = Pulsar::Archive::load(input_ar);
         std::cout << "read_archive_time = " << seconds_since(t_read) << " s" << std::endl;
 
         const auto t_extract = Clock::now();
-        std::vector<float> input = extract_normalized_I(ar.ptr());
+        if (ar_ai->get_state() != Signal::Stokes) {
+            ar_ai->convert_state(Signal::Stokes);
+            std::cout << "AI preprocessing: converted to Stokes" << std::endl;
+        }
+        ar_ai->remove_baseline();
+        std::cout << "AI preprocessing: remove_baseline applied" << std::endl;
+        std::vector<float> input = extract_normalized_I(ar_ai.ptr());
         std::cout << "extract_preprocess_time = " << seconds_since(t_extract) << " s" << std::endl;
 
         const auto t_infer = Clock::now();
