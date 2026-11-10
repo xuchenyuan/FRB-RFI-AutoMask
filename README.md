@@ -13,6 +13,13 @@ threshold are masked.
 - `test.py`: evaluate a checkpoint and optionally export it to ONNX.
 - `apply_mask_onnx.cc`: apply the ONNX model to a PSRCHIVE archive on a CPU.
 
+## Pre-trained models
+
+The provided `cnn_bigru.pth` and `cnn_bigru.onnx` models were trained on
+polarization-calibrated PSRCHIVE archives containing 4096 frequency channels
+and 4096 time bins, with a temporal resolution of 49.152 μs. Input data
+should use the same polarization calibration and sampling configuration.
+
 ## Environment
 
 The Python programs require Python 3.10 or newer, NumPy and PyTorch. ONNX is
@@ -164,5 +171,6 @@ The threshold and ONNX Runtime intra-op thread count can be specified:
 ./apply_mask_onnx input.ar cnn_bigru.onnx output.ar 0.38127 4
 ```
 
-The input archive is not modified. Pre-existing zero channel weights are
-preserved, and the new mask is written to the output archive.
+The input archive is not modified. The output archive retains the original
+polarization data, while existing channel weights are replaced by the
+AI-predicted RFI mask.
